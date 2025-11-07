@@ -1,6 +1,6 @@
 {
   "name": "stenchofdeath",
-  "version_number": "1.0.0",
+  "version_number": "1.0.1",
   "website_url": "https://github.com/rekkisomo/lc-stenchofdeath",
   "description": "Corpses now smell enough to have flies.",
   "dependencies": ["BepInEx-BepInExPack-5.4.2100"]
