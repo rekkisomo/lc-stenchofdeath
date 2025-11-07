@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace StenchofDeath;
 
-[BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
+[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
 public class StenchofDeath : BaseUnityPlugin
 {
     public static StenchofDeath Instance { get; private set; } = null!;
@@ -20,7 +20,7 @@ public class StenchofDeath : BaseUnityPlugin
 
         Patch();
 
-        Logger.LogInfo($"{PluginInfo.PLUGIN_GUID} v{PluginInfo.PLUGIN_VERSION} making bodies extra stinky");
+        Logger.LogInfo($"{MyPluginInfo.PLUGIN_GUID} v{MyPluginInfo.PLUGIN_VERSION} making bodies extra stinky");
         
         Logger.LogInfo("Loading Fly Asset...");
         
@@ -34,7 +34,7 @@ public class StenchofDeath : BaseUnityPlugin
 
     internal static void Patch()
     {
-        Harmony ??= new Harmony(PluginInfo.PLUGIN_GUID);
+        Harmony ??= new Harmony(MyPluginInfo.PLUGIN_GUID);
 
         Logger.LogDebug("Patching...");
 

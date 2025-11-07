@@ -7,40 +7,80 @@ namespace StenchofDeath.Patches;
 [HarmonyPatch]
 public class StenchOfDeathPatch
 {
-    // Dictionary to store stench data per instance
-    private static Dictionary<DeadBodyInfo, StenchData> _stenchDataMap = new();
+    private const float TIME_TO_ROT = 60f;
+    private const float STENCH_DURATION = 30f;
+    private const float EMISSION_MULTIPLIER = 10f;
+    private const float AUDIO_MULTIPLIER = 0.1f;
+    private const int POOL_MAX_SIZE = 32;
 
     private class StenchData
     {
+        public DeadBodyInfo? Body;
         public GameObject? Flies;
-        public float TimeSinceDeath;
-        public float TimeSinceRotten;
+        public Transform? FliesTransform;
+        public ParticleSystem? ParticleSystem;
         public ParticleSystem.EmissionModule EmissionModule;
         public AudioSource? AudioSource;
+        public float TimeSinceDeath;
+        public float TimeSinceRotten;
         public bool BodyRotten;
-        public float Stench;
-        public const float Multiplier = 1f;
+        
+        public void Reset()
+        {
+            Body = null;
+            Flies = null;
+            FliesTransform = null;
+            ParticleSystem = null;
+            AudioSource = null;
+            TimeSinceDeath = 0f;
+            TimeSinceRotten = 0f;
+            BodyRotten = false;
+        }
+    }
+    
+    private static readonly List<StenchData> _activeData = new(32);
+    private static readonly Stack<StenchData> _dataPool = new(POOL_MAX_SIZE);
+
+    private static StenchData GetPooledData()
+    {
+        if (_dataPool.Count > 0)
+        {
+            var data = _dataPool.Pop();
+            data.Reset();
+            return data;
+        }
+        return new StenchData();
+    }
+
+    private static void ReturnToPool(StenchData data)
+    {
+        if (_dataPool.Count < POOL_MAX_SIZE)
+        {
+            data.Reset();
+            _dataPool.Push(data);
+        }
     }
     
     [HarmonyPatch(typeof(DeadBodyInfo), "Start")]
     [HarmonyPostfix]
     private static void StartPostfix(DeadBodyInfo __instance)
     {
-        StenchofDeath.Logger.LogDebug("Starting stench on body: " + __instance.name);
-        var data = new StenchData();
-        _stenchDataMap[__instance] = data;
+        var data = GetPooledData();
+        data.Body = __instance;
+        _activeData.Add(data);
 
         data.Flies = Object.Instantiate(Assets.FlyPrefab, __instance.transform, true);
-        data.Flies!.transform.localPosition = Vector3.zero;
-        data.Flies.transform.localScale = Vector3.one;
+        data.FliesTransform = data.Flies!.transform;
+        data.FliesTransform.localPosition = Vector3.zero;
+        data.FliesTransform.localScale = Vector3.one;
         
-        var component = data.Flies.GetComponent<ParticleSystem>();
-        data.EmissionModule = component.emission;
-        data.EmissionModule.rateOverTime = 0.0f;
-        component.Play();
+        data.ParticleSystem = data.Flies.GetComponent<ParticleSystem>();
+        data.EmissionModule = data.ParticleSystem.emission;
+        data.EmissionModule.rateOverTime = 0f;
+        data.ParticleSystem.Play();
         
         data.AudioSource = data.Flies.GetComponent<AudioSource>();
-        data.AudioSource.volume = 0.0f;
+        data.AudioSource.volume = 0f;
         data.AudioSource.Play();
     }
 
@@ -48,33 +88,51 @@ public class StenchOfDeathPatch
     [HarmonyPostfix]
     private static void UpdatePostfix(DeadBodyInfo __instance)
     {
-        if (!_stenchDataMap.TryGetValue(__instance, out var data))
+        StenchData? data = null;
+        for (var i = 0; i < _activeData.Count; i++)
+        {
+            if (_activeData[i].Body != __instance) continue;
+            data = _activeData[i];
+            break;
+        }
+        
+        if (data == null)
             return;
 
         data.TimeSinceDeath += Time.deltaTime;
         
-        // magic numbers go brr
-        if (data is { TimeSinceDeath: >= 60, BodyRotten: false })
+        if (!data.BodyRotten)
         {
+            if (!(data.TimeSinceDeath >= TIME_TO_ROT)) return;
             data.BodyRotten = true;
             data.TimeSinceRotten = data.TimeSinceDeath;
+            return;
         }
         
-        if (!data.BodyRotten || data.TimeSinceDeath - data.TimeSinceRotten > 30.0f)
+        var rotDuration = data.TimeSinceDeath - data.TimeSinceRotten;
+        if (rotDuration > STENCH_DURATION)
             return;
 
-        data.Stench = ((data.TimeSinceDeath - data.TimeSinceRotten) / 30.0f) * StenchData.Multiplier;
-        data.EmissionModule.rateOverTime = (int)(data.Stench * 10);
-        if (data.AudioSource != null) data.AudioSource.volume = data.Stench * 0.1f;
+        var stench = rotDuration / STENCH_DURATION;
+        data.EmissionModule.rateOverTime = stench * EMISSION_MULTIPLIER;
+        data.AudioSource!.volume = stench * AUDIO_MULTIPLIER;
     }
 
     [HarmonyPatch(typeof(DeadBodyInfo), "OnDestroy")]
     [HarmonyPostfix]
     private static void OnDestroyPostfix(DeadBodyInfo __instance)
     {
-        if (!_stenchDataMap.TryGetValue(__instance, out var data)) return;
-        if (data.Flies != null)
-            Object.Destroy(data.Flies);
-        _stenchDataMap.Remove(__instance);
+        for (var i = _activeData.Count - 1; i >= 0; i--)
+        {
+            if (_activeData[i].Body != __instance) continue;
+            var data = _activeData[i];
+                
+            if (data.Flies != null)
+                Object.Destroy(data.Flies);
+                
+            _activeData.RemoveAt(i);
+            ReturnToPool(data);
+            return;
+        }
     }
 }
